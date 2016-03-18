@@ -1,23 +1,19 @@
+#!/usr/bin/env python
 '''
 Grabs the administration and authentication logs from the Duo Security
 API and sends CEF-compliant syslog messages.
-
 Error/Debug Logs:
 Setting the 'DEBUG' flag in the conf.ini file prints all the
 CEF messages to a file specified in 'DEBUG_FILE'. By default,
 this is written to 'debug.log'. All exceptions  are logged to
 'exceptions.log'.
-
 Logging format (CEF):
 This is the ArcSight log format and is comprised of a syslog prefix,
 a header, and an extension, as shown here:
-
     Jan 18 11:07:53 host CEF:Version|Device Vendor|
     Device Product|Device Version|Signature ID|Name|Severity|[Extension]
-
     Sep 19 08:26:10 host CEF:0|Security|threatmanager|1.0|100|worm
     successfully stopped|10|src=10.0.0.1 dst=2.1.2.2 spt=1232
-
 '''
 from __future__ import print_function
 from datetime import datetime
@@ -91,11 +87,10 @@ def get_logs(proxy=None, proxy_port=None):
         auth_log = admin_api.get_authentication_log(mintime=mintime)
 
     for entry in admin_log:
-        # timestamp is converted to milliseconds for CEF
         # repr is used to keep '\\' in the domain\username
         extension = {
             'duser=': repr(entry['username']).lstrip("u").strip("'"),
-            'rt=': str(entry['timestamp'] * 1000),
+            'rt=': str(datetime.fromtimestamp(entry['timestamp']).strftime('%b %d %Y %H:%M:%S')),
             'description=': str(entry.get('description')),
             'dhost=': entry['host'],
         }
@@ -103,10 +98,9 @@ def get_logs(proxy=None, proxy_port=None):
         log_to_cef(entry['eventtype'], entry['action'], **extension)
 
     for entry in auth_log:
-        # timestamp is converted to milliseconds for CEF
         # repr is used to keep '\\' in the domain\username
         extension = {
-            'rt=': str(entry['timestamp'] * 1000),
+            'rt=': str(datetime.fromtimestamp(entry['timestamp']).strftime('%b %d %Y %H:%M:%S')),
             'src=': entry['ip'],
             'dhost=': entry['host'],
             'duser=': repr(entry['username']).lstrip("u").strip("'"),
@@ -124,7 +118,7 @@ def get_logs(proxy=None, proxy_port=None):
 if __name__ == "__main__":
     try:
         config = ConfigParser.ConfigParser()
-        config.read('conf.ini')
+        config.read('/root/duo/conf.ini')
 
         INTEGRATION_KEY = config.get('api', 'INTEGRATION_KEY')
         SECRET_KEY = config.get('api', 'SECRET_KEY')
@@ -155,8 +149,8 @@ if __name__ == "__main__":
         mintime = utc_date - DELTA
 
         syslog_date = datetime.now()
-        syslog_date_time = syslog_date.strftime("%b %d %H:%M:%S")
-        syslog_header = ' '.join([syslog_date_time, HOSTNAME])
+        syslog_date_time = syslog_date.strftime("%b %d %Y %H:%M:%S")
+        syslog_header = ' '.join([syslog_date_time, "DUO"])
 
         l = UDPSyslogEmitter(address=(SYSLOG_SERVER, SYSLOG_PORT))
 
@@ -166,5 +160,5 @@ if __name__ == "__main__":
             get_logs()
 
     except Exception, e:
-        with open('exceptions.log', 'a+') as exception_file:
+        with open('/root/duo/exceptions.log', 'a+') as exception_file:
             print(datetime.utcnow(), e, file=exception_file)
